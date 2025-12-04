@@ -272,6 +272,71 @@ async def export_wiki(request: WikiExportRequest):
         logger.error(error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
+
+# --- Azure DevOps API Models ---
+class AzureRepoStructureRequest(BaseModel):
+    """Request model for Azure DevOps repository structure."""
+    repo_url: str = Field(..., description="Azure DevOps repository URL")
+    token: Optional[str] = Field(None, description="Personal Access Token")
+    branch: Optional[str] = Field(None, description="Branch name (uses default if not specified)")
+
+
+class AzureRepoStructureResponse(BaseModel):
+    """Response model for Azure DevOps repository structure."""
+    file_tree: str = Field(..., description="File tree as newline-separated paths")
+    readme: str = Field("", description="README content")
+    default_branch: str = Field(..., description="Default branch name")
+
+
+@app.post("/azure/repo/structure", response_model=AzureRepoStructureResponse)
+async def get_azure_repo_structure(request: AzureRepoStructureRequest):
+    """
+    Get repository structure (file tree and README) from Azure DevOps.
+    
+    This endpoint proxies requests to Azure DevOps REST API to avoid CORS issues
+    when accessing from the browser.
+    """
+    try:
+        from api.azure_devops import AzureDevOpsClient, mask_pat_in_string
+        
+        logger.info(f"Fetching Azure DevOps repository structure for: {request.repo_url}")
+        
+        # Create client and get structure
+        client = AzureDevOpsClient(request.repo_url, request.token)
+        structure = client.get_repo_structure(request.branch)
+        
+        return AzureRepoStructureResponse(
+            file_tree=structure['file_tree'],
+            readme=structure['readme'],
+            default_branch=structure['default_branch']
+        )
+        
+    except ValueError as e:
+        error_msg = str(e)
+        if request.token:
+            from api.azure_devops import mask_pat_in_string
+            error_msg = mask_pat_in_string(error_msg, request.token)
+        logger.error(f"Azure DevOps API error: {error_msg}")
+        
+        # Determine appropriate status code based on error message
+        if "Unauthorized" in error_msg or "401" in error_msg:
+            raise HTTPException(status_code=401, detail=error_msg)
+        elif "Forbidden" in error_msg or "403" in error_msg:
+            raise HTTPException(status_code=403, detail=error_msg)
+        elif "not found" in error_msg.lower() or "404" in error_msg:
+            raise HTTPException(status_code=404, detail=error_msg)
+        else:
+            raise HTTPException(status_code=400, detail=error_msg)
+            
+    except Exception as e:
+        error_msg = f"Error fetching Azure DevOps repository structure: {str(e)}"
+        if request.token:
+            from api.azure_devops import mask_pat_in_string
+            error_msg = mask_pat_in_string(error_msg, request.token)
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
 @app.get("/local_repo/structure")
 async def get_local_repo_structure(path: str = Query(None, description="Path to local repository")):
     """Return the file tree and README content for a local repository."""

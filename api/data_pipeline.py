@@ -68,10 +68,10 @@ def count_tokens(text: str, embedder_type: str = None, is_ollama_embedder: bool 
 
 def download_repo(repo_url: str, local_path: str, repo_type: str = None, access_token: str = None) -> str:
     """
-    Downloads a Git repository (GitHub, GitLab, or Bitbucket) to a specified local path.
+    Downloads a Git repository (GitHub, GitLab, Bitbucket, or Azure DevOps) to a specified local path.
 
     Args:
-        repo_type(str): Type of repository
+        repo_type(str): Type of repository (github, gitlab, bitbucket, azure)
         repo_url (str): The URL of the Git repository to clone.
         local_path (str): The local directory where the repository will be cloned.
         access_token (str, optional): Access token for private repositories.
@@ -98,31 +98,52 @@ def download_repo(repo_url: str, local_path: str, repo_type: str = None, access_
         # Ensure the local path exists
         os.makedirs(local_path, exist_ok=True)
 
-        # Prepare the clone URL with access token if provided
+        # Prepare the clone command
         clone_url = repo_url
+        git_command = ["git", "clone", "--depth=1", "--single-branch"]
+        
         if access_token:
-            parsed = urlparse(repo_url)
-            # URL-encode the token to handle special characters
-            encoded_token = quote(access_token, safe='')
-            # Determine the repository type and format the URL accordingly
-            if repo_type == "github":
-                # Format: https://{token}@{domain}/owner/repo.git
-                # Works for both github.com and enterprise GitHub domains
-                clone_url = urlunparse((parsed.scheme, f"{encoded_token}@{parsed.netloc}", parsed.path, '', '', ''))
-            elif repo_type == "gitlab":
-                # Format: https://oauth2:{token}@gitlab.com/owner/repo.git
-                clone_url = urlunparse((parsed.scheme, f"oauth2:{encoded_token}@{parsed.netloc}", parsed.path, '', '', ''))
-            elif repo_type == "bitbucket":
-                # Format: https://x-token-auth:{token}@bitbucket.org/owner/repo.git
-                clone_url = urlunparse((parsed.scheme, f"x-token-auth:{encoded_token}@{parsed.netloc}", parsed.path, '', '', ''))
+            if repo_type == "azure":
+                # Azure DevOps: Use http.extraheader for authentication
+                # This is the recommended way to authenticate with Azure DevOps
+                # Format: AUTHORIZATION: Basic base64(":PAT")
+                from api.azure_devops import create_azure_auth_header, mask_pat_in_string
+                auth_header = create_azure_auth_header(access_token)
+                # Use -c to set the extraheader config for this clone operation only
+                git_command = [
+                    "git", 
+                    "-c", f"http.extraheader=Authorization: {auth_header.split(' ', 1)[1] if ' ' in auth_header else auth_header}",
+                    "clone", "--depth=1", "--single-branch"
+                ]
+                # Keep the original URL (don't embed token in URL)
+                clone_url = repo_url
+                logger.info("Using Azure DevOps PAT authentication via http.extraheader")
+            else:
+                parsed = urlparse(repo_url)
+                # URL-encode the token to handle special characters
+                encoded_token = quote(access_token, safe='')
+                # Determine the repository type and format the URL accordingly
+                if repo_type == "github":
+                    # Format: https://{token}@{domain}/owner/repo.git
+                    # Works for both github.com and enterprise GitHub domains
+                    clone_url = urlunparse((parsed.scheme, f"{encoded_token}@{parsed.netloc}", parsed.path, '', '', ''))
+                elif repo_type == "gitlab":
+                    # Format: https://oauth2:{token}@gitlab.com/owner/repo.git
+                    clone_url = urlunparse((parsed.scheme, f"oauth2:{encoded_token}@{parsed.netloc}", parsed.path, '', '', ''))
+                elif repo_type == "bitbucket":
+                    # Format: https://x-token-auth:{token}@bitbucket.org/owner/repo.git
+                    clone_url = urlunparse((parsed.scheme, f"x-token-auth:{encoded_token}@{parsed.netloc}", parsed.path, '', '', ''))
 
-            logger.info("Using access token for authentication")
+                logger.info("Using access token for authentication")
 
+        # Add URL and local path to command
+        git_command.extend([clone_url, local_path])
+        
         # Clone the repository
         logger.info(f"Cloning repository from {repo_url} to {local_path}")
         # We use repo_url in the log to avoid exposing the token in logs
         result = subprocess.run(
-            ["git", "clone", "--depth=1", "--single-branch", clone_url, local_path],
+            git_command,
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -140,6 +161,10 @@ def download_repo(repo_url: str, local_path: str, repo_type: str = None, access_
             # Also remove URL-encoded token to prevent leaking encoded version
             encoded_token = quote(access_token, safe='')
             error_msg = error_msg.replace(encoded_token, "***TOKEN***")
+            # For Azure, also mask base64-encoded PAT
+            if repo_type == "azure":
+                from api.azure_devops import mask_pat_in_string
+                error_msg = mask_pat_in_string(error_msg, access_token)
         raise ValueError(f"Error during cloning: {error_msg}")
     except Exception as e:
         raise ValueError(f"An unexpected error occurred: {str(e)}")
@@ -683,10 +708,10 @@ def get_bitbucket_file_content(repo_url: str, file_path: str, access_token: str 
 
 def get_file_content(repo_url: str, file_path: str, repo_type: str = None, access_token: str = None) -> str:
     """
-    Retrieves the content of a file from a Git repository (GitHub or GitLab).
+    Retrieves the content of a file from a Git repository (GitHub, GitLab, Bitbucket, or Azure DevOps).
 
     Args:
-        repo_type (str): Type of repository
+        repo_type (str): Type of repository (github, gitlab, bitbucket, azure)
         repo_url (str): The URL of the repository
         file_path (str): The path to the file within the repository
         access_token (str, optional): Access token for private repositories
@@ -703,8 +728,46 @@ def get_file_content(repo_url: str, file_path: str, repo_type: str = None, acces
         return get_gitlab_file_content(repo_url, file_path, access_token)
     elif repo_type == "bitbucket":
         return get_bitbucket_file_content(repo_url, file_path, access_token)
+    elif repo_type == "azure":
+        return get_azure_file_content(repo_url, file_path, access_token)
     else:
-        raise ValueError("Unsupported repository type. Only GitHub, GitLab, and Bitbucket are supported.")
+        raise ValueError("Unsupported repository type. Supported types: GitHub, GitLab, Bitbucket, Azure DevOps.")
+
+
+def get_azure_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
+    """
+    Retrieves the content of a file from an Azure DevOps repository.
+
+    Args:
+        repo_url (str): The URL of the Azure DevOps repository
+        file_path (str): The path to the file within the repository
+        access_token (str, optional): Personal Access Token for private repositories
+
+    Returns:
+        str: The content of the file as a string
+
+    Raises:
+        ValueError: If the file cannot be fetched or if the URL is not valid
+    """
+    try:
+        from api.azure_devops import AzureDevOpsClient, mask_pat_in_string
+        
+        client = AzureDevOpsClient(repo_url, access_token)
+        content = client.get_file_content(file_path)
+        return content
+        
+    except ValueError as e:
+        # Re-raise ValueError with masked PAT
+        error_msg = str(e)
+        if access_token:
+            error_msg = mask_pat_in_string(error_msg, access_token)
+        raise ValueError(error_msg)
+    except Exception as e:
+        error_msg = f"Failed to get file content from Azure DevOps: {str(e)}"
+        if access_token:
+            from api.azure_devops import mask_pat_in_string
+            error_msg = mask_pat_in_string(error_msg, access_token)
+        raise ValueError(error_msg)
 
 class DatabaseManager:
     """
@@ -760,7 +823,16 @@ class DatabaseManager:
         # Extract owner and repo name to create unique identifier
         url_parts = repo_url_or_path.rstrip('/').split('/')
 
-        if repo_type in ["github", "gitlab", "bitbucket"] and len(url_parts) >= 5:
+        if repo_type == "azure":
+            # Azure DevOps URL format needs special handling
+            from api.azure_devops import parse_azure_repo_url, get_azure_repo_slug
+            azure_info = parse_azure_repo_url(repo_url_or_path)
+            if azure_info:
+                return get_azure_repo_slug(azure_info)
+            # Fallback if parsing fails
+            logger.warning(f"Could not parse Azure DevOps URL, using fallback: {repo_url_or_path}")
+            return url_parts[-1].replace(".git", "")
+        elif repo_type in ["github", "gitlab", "bitbucket"] and len(url_parts) >= 5:
             # GitHub URL format: https://github.com/owner/repo
             # GitLab URL format: https://gitlab.com/owner/repo or https://gitlab.com/group/subgroup/repo
             # Bitbucket URL format: https://bitbucket.org/owner/repo

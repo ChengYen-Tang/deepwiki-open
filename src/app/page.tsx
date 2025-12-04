@@ -134,7 +134,7 @@ export default function Home() {
   const [excludedFiles, setExcludedFiles] = useState('');
   const [includedDirs, setIncludedDirs] = useState('');
   const [includedFiles, setIncludedFiles] = useState('');
-  const [selectedPlatform, setSelectedPlatform] = useState<'github' | 'gitlab' | 'bitbucket'>('github');
+  const [selectedPlatform, setSelectedPlatform] = useState<'github' | 'gitlab' | 'bitbucket' | 'azure'>('github');
   const [accessToken, setAccessToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -206,21 +206,56 @@ export default function Home() {
     else if (customGitRegex.test(input)) {
       // Detect repository type based on domain
       const domain = extractUrlDomain(input);
-      if (domain?.includes('github.com')) {
+      const lowerInput = input.toLowerCase();
+      
+      // Check for Azure DevOps patterns first
+      if (domain?.includes('dev.azure.com') || domain?.includes('visualstudio.com') || lowerInput.includes('/_git/')) {
+        type = 'azure';
+        // Parse Azure DevOps URL to extract owner and repo
+        // Services: https://dev.azure.com/{org}/{project}/_git/{repo}
+        // Server: https://{host}/{collection}/{project}/_git/{repo}
+        const pathParts = extractUrlPath(input)?.replace(/\.git$/, '').split('/').filter(Boolean) ?? [];
+        const gitIndex = pathParts.indexOf('_git');
+        if (gitIndex >= 0 && gitIndex + 1 < pathParts.length) {
+          repo = pathParts[gitIndex + 1] || '';
+          // For Azure, owner is combination of org/collection and project for uniqueness
+          const project = pathParts[gitIndex - 1] || '';
+          const org = pathParts.length > 2 ? pathParts[0] : '';
+          owner = org ? `${org}-${project}` : project;
+        }
+        fullPath = extractUrlPath(input)?.replace(/\.git$/, '');
+      } else if (domain?.includes('github.com')) {
         type = 'github';
+        fullPath = extractUrlPath(input)?.replace(/\.git$/, '');
+        const parts = fullPath?.split('/') ?? [];
+        if (parts.length >= 2) {
+          repo = parts[parts.length - 1] || '';
+          owner = parts[parts.length - 2] || '';
+        }
       } else if (domain?.includes('gitlab.com') || domain?.includes('gitlab.')) {
         type = 'gitlab';
+        fullPath = extractUrlPath(input)?.replace(/\.git$/, '');
+        const parts = fullPath?.split('/') ?? [];
+        if (parts.length >= 2) {
+          repo = parts[parts.length - 1] || '';
+          owner = parts[parts.length - 2] || '';
+        }
       } else if (domain?.includes('bitbucket.org') || domain?.includes('bitbucket.')) {
         type = 'bitbucket';
+        fullPath = extractUrlPath(input)?.replace(/\.git$/, '');
+        const parts = fullPath?.split('/') ?? [];
+        if (parts.length >= 2) {
+          repo = parts[parts.length - 1] || '';
+          owner = parts[parts.length - 2] || '';
+        }
       } else {
         type = 'web'; // fallback for other git hosting services
-      }
-
-      fullPath = extractUrlPath(input)?.replace(/\.git$/, '');
-      const parts = fullPath?.split('/') ?? [];
-      if (parts.length >= 2) {
-        repo = parts[parts.length - 1] || '';
-        owner = parts[parts.length - 2] || '';
+        fullPath = extractUrlPath(input)?.replace(/\.git$/, '');
+        const parts = fullPath?.split('/') ?? [];
+        if (parts.length >= 2) {
+          repo = parts[parts.length - 1] || '';
+          owner = parts[parts.length - 2] || '';
+        }
       }
     }
     // Unsupported URL formats
@@ -336,7 +371,7 @@ export default function Home() {
     const parsedRepo = parseRepositoryInput(repositoryInput);
 
     if (!parsedRepo) {
-      setError('Invalid repository format. Use "owner/repo", GitHub/GitLab/BitBucket URL, or a local folder path like "/path/to/folder" or "C:\\path\\to\\folder".');
+      setError('Invalid repository format. Use "owner/repo", GitHub/GitLab/BitBucket/Azure DevOps URL, or a local folder path like "/path/to/folder" or "C:\\path\\to\\folder".');
       setIsSubmitting(false);
       return;
     }
@@ -348,8 +383,9 @@ export default function Home() {
     if (accessToken) {
       params.append('token', accessToken);
     }
-    // Always include the type parameter
-    params.append('type', (type == 'local' ? type : selectedPlatform) || 'github');
+    // Always include the type parameter - use detected type for Azure, otherwise use selected platform
+    const effectiveType = type === 'azure' ? 'azure' : (type === 'local' ? type : selectedPlatform) || 'github';
+    params.append('type', effectiveType);
     // Add local path if it exists
     if (localPath) {
       params.append('local_path', encodeURIComponent(localPath));

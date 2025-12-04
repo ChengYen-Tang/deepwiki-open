@@ -13,7 +13,7 @@ import { extractUrlDomain, extractUrlPath } from '@/utils/urlDecoder';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FaBitbucket, FaBookOpen, FaComments, FaDownload, FaExclamationTriangle, FaFileExport, FaFolder, FaGithub, FaGitlab, FaHome, FaSync, FaTimes } from 'react-icons/fa';
+import { FaBitbucket, FaBookOpen, FaComments, FaDownload, FaExclamationTriangle, FaFileExport, FaFolder, FaGithub, FaGitlab, FaHome, FaMicrosoft, FaSync, FaTimes } from 'react-icons/fa';
 // Define the WikiSection and WikiStructure types directly in this file
 // since the imported types don't have the sections and rootSections properties
 interface WikiSection {
@@ -201,13 +201,15 @@ export default function RepoWikiPage() {
       return '';
     }
   })();
-  const repoType = repoHost?.includes('bitbucket')
-    ? 'bitbucket'
-    : repoHost?.includes('gitlab')
-      ? 'gitlab'
-      : repoHost?.includes('github')
-        ? 'github'
-        : searchParams.get('type') || 'github';
+  const repoType = repoHost?.includes('dev.azure.com') || repoHost?.includes('visualstudio.com') || repoUrl?.includes('/_git/')
+    ? 'azure'
+    : repoHost?.includes('bitbucket')
+      ? 'bitbucket'
+      : repoHost?.includes('gitlab')
+        ? 'gitlab'
+        : repoHost?.includes('github')
+          ? 'github'
+          : searchParams.get('type') || 'github';
 
   // Import language context for translations
   const { messages } = useLanguage();
@@ -308,6 +310,10 @@ export default function RepoWikiPage() {
       } else if (hostname === 'bitbucket.org' || hostname.includes('bitbucket')) {
         // Bitbucket URL format: https://bitbucket.org/owner/repo/src/branch/path
         return `${repoUrl}/src/${defaultBranch}/${filePath}`;
+      } else if (hostname === 'dev.azure.com' || hostname.includes('visualstudio.com') || repoUrl.includes('/_git/')) {
+        // Azure DevOps URL format: https://dev.azure.com/{org}/{project}/_git/{repo}?path=/{file}&version=GB{branch}
+        const encodedPath = encodeURIComponent('/' + filePath);
+        return `${repoUrl}?path=${encodedPath}&version=GB${defaultBranch}`;
       }
     } catch (error) {
       console.warn('Error generating file URL:', error);
@@ -1479,6 +1485,45 @@ IMPORTANT:
           console.warn('Could not fetch Bitbucket README.md, continuing with empty README', err);
         }
       }
+      else if (effectiveRepoInfo.type === 'azure') {
+        // Azure DevOps API approach - use backend proxy to avoid CORS
+        try {
+          const response = await fetch('/azure/repo/structure', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              repo_url: effectiveRepoInfo.repoUrl,
+              token: currentToken || undefined,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+            const errorMessage = errorData.detail || errorData.error || `HTTP ${response.status}`;
+            
+            if (response.status === 401) {
+              throw new Error(`Azure DevOps authentication failed. Please check your Personal Access Token. (${errorMessage})`);
+            } else if (response.status === 403) {
+              throw new Error(`Azure DevOps access denied. Your PAT may not have "Code (Read)" permission. (${errorMessage})`);
+            } else if (response.status === 404) {
+              throw new Error(`Azure DevOps repository not found. Please check the URL. (${errorMessage})`);
+            } else {
+              throw new Error(`Azure DevOps API error: ${errorMessage}`);
+            }
+          }
+
+          const data = await response.json();
+          fileTreeData = data.file_tree;
+          readmeContent = data.readme;
+          setDefaultBranch(data.default_branch || 'main');
+          console.log(`Successfully fetched Azure DevOps repository structure, default branch: ${data.default_branch}`);
+        } catch (err) {
+          console.error('Error fetching Azure DevOps repository structure:', err);
+          throw err;
+        }
+      }
 
       // Now determine the wiki structure
       await determineWikiStructure(fileTreeData, readmeContent, owner, repo);
@@ -2059,6 +2104,8 @@ IMPORTANT:
                       <FaGithub className="mr-2" />
                     ) : effectiveRepoInfo.type === 'gitlab' ? (
                       <FaGitlab className="mr-2" />
+                    ) : effectiveRepoInfo.type === 'azure' ? (
+                      <FaMicrosoft className="mr-2" />
                     ) : (
                       <FaBitbucket className="mr-2" />
                     )}

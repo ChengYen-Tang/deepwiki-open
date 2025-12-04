@@ -4,8 +4,8 @@ import React from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface TokenInputProps {
-  selectedPlatform: 'github' | 'gitlab' | 'bitbucket';
-  setSelectedPlatform: (value: 'github' | 'gitlab' | 'bitbucket') => void;
+  selectedPlatform: 'github' | 'gitlab' | 'bitbucket' | 'azure';
+  setSelectedPlatform: (value: 'github' | 'gitlab' | 'bitbucket' | 'azure') => void;
   accessToken: string;
   setAccessToken: (value: string) => void;
   showTokenSection?: boolean;
@@ -24,7 +24,17 @@ export default function TokenInput({
 }: TokenInputProps) {
   const { messages: t } = useLanguage();
 
-  const platformName = selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1);
+  const platformName = selectedPlatform === 'azure' 
+    ? 'Azure DevOps' 
+    : selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1);
+
+  // Azure DevOps specific help text
+  const getTokenHelpText = () => {
+    if (selectedPlatform === 'azure') {
+      return t.form?.azureTokenHelp || 'Azure DevOps PAT requires "Code (Read)" permission. Leave username empty, use PAT as password.';
+    }
+    return t.form?.tokenSecurityNote || 'Your token is stored locally and never sent to our servers.';
+  };
 
   return (
     <div className="mb-4">
@@ -45,11 +55,11 @@ export default function TokenInput({
               <label className="block text-xs font-medium text-[var(--foreground)] mb-2">
                 {t.form?.selectPlatform || 'Select Platform'}
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setSelectedPlatform('github')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-all ${selectedPlatform === 'github'
+                  className={`flex-1 min-w-[80px] flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-all ${selectedPlatform === 'github'
                     ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)] shadow-sm'
                     : 'border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--background)]'
                     }`}
@@ -59,7 +69,7 @@ export default function TokenInput({
                 <button
                   type="button"
                   onClick={() => setSelectedPlatform('gitlab')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-all ${selectedPlatform === 'gitlab'
+                  className={`flex-1 min-w-[80px] flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-all ${selectedPlatform === 'gitlab'
                     ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)] shadow-sm'
                     : 'border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--background)]'
                     }`}
@@ -69,12 +79,22 @@ export default function TokenInput({
                 <button
                   type="button"
                   onClick={() => setSelectedPlatform('bitbucket')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-all ${selectedPlatform === 'bitbucket'
+                  className={`flex-1 min-w-[80px] flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-all ${selectedPlatform === 'bitbucket'
                     ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)] shadow-sm'
                     : 'border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--background)]'
                     }`}
                 >
                   <span className="text-sm">Bitbucket</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPlatform('azure')}
+                  className={`flex-1 min-w-[80px] flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-all ${selectedPlatform === 'azure'
+                    ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)] shadow-sm'
+                    : 'border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--background)]'
+                    }`}
+                >
+                  <span className="text-sm">Azure DevOps</span>
                 </button>
               </div>
             </div>
@@ -98,7 +118,7 @@ export default function TokenInput({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              {t.form?.tokenSecurityNote || 'Your token is stored locally and never sent to our servers.'}
+              {getTokenHelpText()}
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@
 
 ![DeepWiki Banner](screenshots/Deepwiki.png)
 
-**DeepWiki** is my own implementation attempt of DeepWiki, automatically creates beautiful, interactive wikis for any GitHub, GitLab, or BitBucket repository! Just enter a repo name, and DeepWiki will:
+**DeepWiki** is my own implementation attempt of DeepWiki, automatically creates beautiful, interactive wikis for any GitHub, GitLab, BitBucket, or Azure DevOps repository! Just enter a repo name, and DeepWiki will:
 
 1. Analyze the code structure
 2. Generate comprehensive documentation
@@ -18,7 +18,7 @@
 
 ## ✨ Features
 
-- **Instant Documentation**: Turn any GitHub, GitLab or BitBucket repo into a wiki in seconds
+- **Instant Documentation**: Turn any GitHub, GitLab, BitBucket, or Azure DevOps repo into a wiki in seconds
 - **Private Repository Support**: Securely access private repositories with personal access tokens
 - **Smart Analysis**: AI-powered understanding of code structure and relationships
 - **Beautiful Diagrams**: Automatic Mermaid diagrams to visualize architecture and data flow
@@ -109,15 +109,29 @@ yarn dev
 #### Step 4: Use DeepWiki!
 
 1. Open [http://localhost:3000](http://localhost:3000) in your browser
-2. Enter a GitHub, GitLab, or Bitbucket repository (like `https://github.com/openai/codex`, `https://github.com/microsoft/autogen`, `https://gitlab.com/gitlab-org/gitlab`, or `https://bitbucket.org/redradish/atlassian_app_versions`)
-3. For private repositories, click "+ Add access tokens" and enter your GitHub or GitLab personal access token
+2. Enter a GitHub, GitLab, Bitbucket, or Azure DevOps repository (like `https://github.com/openai/codex`, `https://github.com/microsoft/autogen`, `https://gitlab.com/gitlab-org/gitlab`, `https://bitbucket.org/redradish/atlassian_app_versions`, or `https://dev.azure.com/organization/project/_git/repo`)
+3. For private repositories, click "+ Add access tokens" and enter your personal access token
 4. Click "Generate Wiki" and watch the magic happen!
+
+### Azure DevOps Support
+
+DeepWiki now supports Azure DevOps repositories (both Azure DevOps Services and Azure DevOps Server/TFS):
+
+**Supported URL formats:**
+- Azure DevOps Services: `https://dev.azure.com/{organization}/{project}/_git/{repository}`
+- Azure DevOps Services (old format): `https://{organization}.visualstudio.com/{project}/_git/{repository}`
+- Azure DevOps Server/TFS: `https://{server}/{collection}/{project}/_git/{repository}`
+
+**Personal Access Token (PAT) requirements:**
+- Create a PAT with **Code (Read)** permission
+- For private repositories, add your PAT in the access token section
+- Azure DevOps uses Basic Authentication with an empty username and PAT as password
 
 ## 🔍 How It Works
 
 DeepWiki uses AI to:
 
-1. Clone and analyze the GitHub, GitLab, or Bitbucket repository (including private repos with token authentication)
+1. Clone and analyze the GitHub, GitLab, Bitbucket, or Azure DevOps repository (including private repos with token authentication)
 2. Create embeddings of the code for smart retrieval
 3. Generate documentation with context-aware AI (using Google Gemini, OpenAI, OpenRouter, Azure OpenAI, or local Ollama models)
 4. Create visual diagrams to explain code relationships
@@ -127,7 +141,7 @@ DeepWiki uses AI to:
 
 ```mermaid
 graph TD
-    A[User inputs GitHub/GitLab/Bitbucket repo] --> AA{Private repo?}
+    A[User inputs GitHub/GitLab/Bitbucket/Azure DevOps repo] --> AA{Private repo?}
     AA -->|Yes| AB[Add access token]
     AA -->|No| B[Clone Repository]
     AB --> B
