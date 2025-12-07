@@ -110,9 +110,12 @@ def download_repo(repo_url: str, local_path: str, repo_type: str = None, access_
                 from api.azure_devops import create_azure_auth_header, mask_pat_in_string
                 auth_header = create_azure_auth_header(access_token)
                 # Use -c to set the extraheader config for this clone operation only
+                # Also set http.emptyAuth=true to ensure the header is sent
                 git_command = [
                     "git", 
-                    "-c", f"http.extraheader=Authorization: {auth_header.split(' ', 1)[1] if ' ' in auth_header else auth_header}",
+                    "-c", "http.emptyAuth=true",
+                    "-c", "http.sslVerify=false",
+                    "-c", f"http.extraheader=Authorization: {auth_header}",
                     "clone", "--depth=1", "--single-branch"
                 ]
                 # Keep the original URL (don't embed token in URL)
