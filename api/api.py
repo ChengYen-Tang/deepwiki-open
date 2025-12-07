@@ -300,6 +300,9 @@ async def get_azure_repo_structure(request: AzureRepoStructureRequest):
         from api.azure_devops import AzureDevOpsClient, mask_pat_in_string
         
         logger.info(f"Fetching Azure DevOps repository structure for: {request.repo_url}")
+        logger.info(f"Token provided: {'Yes' if request.token else 'No'}")
+        if request.token:
+             logger.debug(f"Token length: {len(request.token)}")
         
         # Create client and get structure
         client = AzureDevOpsClient(request.repo_url, request.token)

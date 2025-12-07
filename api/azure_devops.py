@@ -58,6 +58,8 @@ def parse_azure_repo_url(repo_url: str) -> Optional[AzureRepoInfo]:
         host = parsed.netloc.lower()
         path_parts = [p for p in parsed.path.split('/') if p]
         
+        logger.debug(f"Parsing Azure URL: host={host}, path_parts={path_parts}")
+        
         # Check if this is an Azure DevOps URL
         is_azure = False
         is_server = False
@@ -75,6 +77,7 @@ def parse_azure_repo_url(repo_url: str) -> Optional[AzureRepoInfo]:
             is_server = True  # Assume Server/TFS for custom hosts
         
         if not is_azure:
+            logger.warning(f"Not an Azure DevOps URL: {repo_url}")
             return None
         
         # Find the _git position in path
@@ -120,11 +123,15 @@ def parse_azure_repo_url(repo_url: str) -> Optional[AzureRepoInfo]:
         elif 'visualstudio.com' in host:
             api_base = f"{scheme}://{host}/{project}"
         else:
-            # Server/TFS
+            # Server/TFS: Keep the full path including collection
+            # For: https://host/collection/project/_git/repo
+            # API should be: https://host/collection/project
             api_base = f"{scheme}://{host}/{organization}/{project}"
         
         # Clone URL is the same as repo URL (without .git)
         clone_url = repo_url
+        
+        logger.debug(f"Parsed Azure DevOps: org={organization}, project={project}, repo={repository}, api_base={api_base}")
         
         return AzureRepoInfo(
             host=host,
@@ -255,10 +262,19 @@ class AzureDevOpsClient:
         """
         self.repo_info = parse_azure_repo_url(repo_url)
         if not self.repo_info:
-            raise ValueError(f"Invalid Azure DevOps URL: {repo_url}")
+            raise ValueError(f"Invalid Azure DevOps URL: {repo_url}. Expected format: https://{{host}}/{{collection}}/{{project}}/_git/{{repo}}")
         
         self.pat = pat
         self.api_version = api_version
+        
+        logger.debug(f"Azure DevOps Client initialized:")
+        logger.debug(f"  Host: {self.repo_info.host}")
+        logger.debug(f"  Organization/Collection: {self.repo_info.organization}")
+        logger.debug(f"  Project: {self.repo_info.project}")
+        logger.debug(f"  Repository: {self.repo_info.repository}")
+        logger.debug(f"  API Base: {self.repo_info.api_base}")
+        logger.debug(f"  Is Server: {self.repo_info.is_server}")
+        logger.debug(f"  Has PAT: {bool(self.pat)}")
         
     def _get_headers(self) -> Dict[str, str]:
         """Get HTTP headers for API requests."""
@@ -305,14 +321,26 @@ class AzureDevOpsClient:
         url = f"{self.repo_info.api_base}/_apis/git/repositories/{self.repo_info.repository}"
         params = {'api-version': self.api_version}
         
-        response = self._make_request(url, params=params)
+        logger.debug(f"Getting repo info from: {url}")
+        logger.debug(f"API base: {self.repo_info.api_base}")
+        logger.debug(f"Repository: {self.repo_info.repository}")
         
+        try:
+            response = self._make_request(url, params=params)
+            logger.debug(f"Response status: {response.status_code}")
+            logger.debug(f"Response headers: {response.headers}")
+            logger.debug(f"Response body (first 500 chars): {response.text[:500]}")
+        except Exception as e:
+            logger.error(f"Error making request to {url}: {e}")
+            raise
+
         if response.status_code == 401:
             raise ValueError("Unauthorized: Invalid or missing PAT. Please check your Personal Access Token.")
         elif response.status_code == 403:
             raise ValueError("Forbidden: Your PAT doesn't have permission to access this repository. Ensure it has 'Code (Read)' scope.")
         elif response.status_code == 404:
-            raise ValueError(f"Repository not found: {self.repo_info.repository}")
+            detail = response.text
+            raise ValueError(f"Repository not found: {self.repo_info.repository}. API URL: {url}. Response: {detail[:200]}")
         
         response.raise_for_status()
         return response.json()
