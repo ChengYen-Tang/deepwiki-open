@@ -546,7 +546,26 @@ This file contains...
                 response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
                 # Handle streaming response from Ollama
                 async for chunk in response:
-                    text = getattr(chunk, 'response', None) or getattr(chunk, 'text', None) or str(chunk)
+                    # Handle dictionary chunks (common in some adalflow versions or raw responses)
+                    if isinstance(chunk, dict):
+                        text = chunk.get('response', '') or chunk.get('text', '') or chunk.get('message', {}).get('content', '')
+                    else:
+                        # Try various attributes that might hold the text
+                        text = getattr(chunk, 'response', None) or \
+                               getattr(chunk, 'text', None) or \
+                               getattr(chunk, 'content', None) or \
+                               getattr(chunk, 'output', None)
+                        
+                        # Check for message.content (Ollama ChatResponse)
+                        if text is None:
+                            message = getattr(chunk, 'message', None)
+                            if message:
+                                text = getattr(message, 'content', None)
+
+                        # Fallback to string representation if nothing else works
+                        if text is None:
+                            text = str(chunk)
+                    
                     if text and not text.startswith('model=') and not text.startswith('created_at='):
                         text = text.replace('<think>', '').replace('</think>', '')
                         await websocket.send_text(text)
