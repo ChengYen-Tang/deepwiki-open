@@ -1982,6 +1982,13 @@ IMPORTANT:
   };
 
   const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
+  const [isProgressPanelOpen, setIsProgressPanelOpen] = useState(true);
+
+  useEffect(() => {
+    if (isLoading && wikiStructure) {
+      setIsProgressPanelOpen(true);
+    }
+  }, [isLoading, wikiStructure]);
 
   return (
     <div className="h-screen paper-texture p-4 md:p-8 flex flex-col">
@@ -1998,33 +2005,14 @@ IMPORTANT:
       </header>
 
       <main className="flex-1 max-w-[90%] xl:max-w-[1400px] mx-auto overflow-y-auto">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center p-8 bg-[var(--card-bg)] rounded-lg shadow-custom card-japanese">
-            <div className="relative mb-6">
-              <div className="absolute -inset-4 bg-[var(--accent-primary)]/10 rounded-full blur-md animate-pulse"></div>
-              <div className="relative flex items-center justify-center">
-                <div className="w-3 h-3 bg-[var(--accent-primary)]/70 rounded-full animate-pulse"></div>
-                <div className="w-3 h-3 bg-[var(--accent-primary)]/70 rounded-full animate-pulse delay-75 mx-2"></div>
-                <div className="w-3 h-3 bg-[var(--accent-primary)]/70 rounded-full animate-pulse delay-150"></div>
-              </div>
-            </div>
-            <p className="text-[var(--foreground)] text-center mb-3 font-serif">
-              {loadingMessage || messages.common?.loading || 'Loading...'}
-              {isExporting && (messages.loading?.preparingDownload || ' Please wait while we prepare your download...')}
-            </p>
-
-            {/* Progress bar for page generation */}
-            {wikiStructure && (
-              <div className="w-full max-w-md mt-3">
-                <div className="bg-[var(--background)]/50 rounded-full h-2 mb-3 overflow-hidden border border-[var(--border-color)]">
-                  <div
-                    className="bg-[var(--accent-primary)] h-2 rounded-full transition-all duration-300 ease-in-out"
-                    style={{
-                      width: `${Math.max(5, 100 * (wikiStructure.pages.length - pagesInProgress.size) / wikiStructure.pages.length)}%`
-                    }}
-                  />
-                </div>
-                <p className="text-xs text-[var(--muted)] text-center">
+        {wikiStructure && isLoading && (
+          <div className="mb-4 bg-[var(--card-bg)] rounded-lg shadow-sm border border-[var(--border-color)] p-4 sticky top-0 z-40">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[var(--foreground)] text-sm font-serif">
+                  {loadingMessage || messages.common?.loading || 'Loading...'}
+                </p>
+                <p className="text-xs text-[var(--muted)] mt-1">
                   {language === 'ja'
                     ? `${wikiStructure.pages.length}ページ中${wikiStructure.pages.length - pagesInProgress.size}ページ完了`
                     : messages.repoPage?.pagesCompleted
@@ -2033,17 +2021,43 @@ IMPORTANT:
                             .replace('{total}', wikiStructure.pages.length.toString())
                         : `${wikiStructure.pages.length - pagesInProgress.size} of ${wikiStructure.pages.length} pages completed`}
                 </p>
+              </div>
 
-                {/* Show list of in-progress pages */}
+              <button
+                type="button"
+                onClick={() => setIsProgressPanelOpen(prev => !prev)}
+                className="text-xs px-3 py-1.5 rounded-md border border-[var(--border-color)] bg-[var(--background)] hover:bg-[var(--background)]/80 transition-colors flex-shrink-0"
+              >
+                {isProgressPanelOpen
+                  ? (messages.repoPage?.hideProgress || 'Hide progress')
+                  : (messages.repoPage?.showProgress || 'Show progress')}
+              </button>
+            </div>
+
+            {isProgressPanelOpen && (
+              <>
+                <div className="bg-[var(--background)]/50 rounded-full h-2 mt-3 overflow-hidden border border-[var(--border-color)]">
+                  <div
+                    className="bg-[var(--accent-primary)] h-2 rounded-full transition-all duration-300 ease-in-out"
+                    style={{
+                      width: `${Math.max(5, 100 * (wikiStructure.pages.length - pagesInProgress.size) / wikiStructure.pages.length)}%`
+                    }}
+                  />
+                </div>
+
                 {pagesInProgress.size > 0 && (
-                  <div className="mt-4 text-xs">
+                  <div className="mt-3 text-xs">
                     <p className="text-[var(--muted)] mb-2">
                       {messages.repoPage?.currentlyProcessing || 'Currently processing:'}
                     </p>
                     <ul className="text-[var(--foreground)] space-y-1">
                       {Array.from(pagesInProgress).slice(0, 3).map(pageId => {
                         const page = wikiStructure.pages.find(p => p.id === pageId);
-                        return page ? <li key={pageId} className="truncate border-l-2 border-[var(--accent-primary)]/30 pl-2">{page.title}</li> : null;
+                        return page ? (
+                          <li key={pageId} className="truncate border-l-2 border-[var(--accent-primary)]/30 pl-2">
+                            {page.title}
+                          </li>
+                        ) : null;
                       })}
                       {pagesInProgress.size > 3 && (
                         <li className="text-[var(--muted)]">
@@ -2057,10 +2071,12 @@ IMPORTANT:
                     </ul>
                   </div>
                 )}
-              </div>
+              </>
             )}
           </div>
-        ) : error ? (
+        )}
+
+        {error ? (
           <div className="bg-[var(--highlight)]/5 border border-[var(--highlight)]/30 rounded-lg p-5 mb-4 shadow-sm">
             <div className="flex items-center text-[var(--highlight)] mb-3">
               <FaExclamationTriangle className="mr-2" />
@@ -2196,8 +2212,6 @@ IMPORTANT:
                     {generatedPages[currentPageId].title}
                   </h3>
 
-
-
                   <div className="prose prose-sm md:prose-base lg:prose-lg max-w-none">
                     <Markdown
                       content={generatedPages[currentPageId].content}
@@ -2233,13 +2247,30 @@ IMPORTANT:
                     <FaBookOpen className="text-4xl relative z-10" />
                   </div>
                   <p className="font-serif">
-                    {messages.repoPage?.selectPagePrompt || 'Select a page from the navigation to view its content'}
+                    {currentPageId
+                      ? (messages.repoPage?.generatingPage || 'Generating this page…')
+                      : (messages.repoPage?.selectPagePrompt || 'Select a page from the navigation to view its content')}
                   </p>
                 </div>
               )}
             </div>
           </div>
-        ) : null}
+	        ) : isLoading ? (
+	          <div className="flex flex-col items-center justify-center p-8 bg-[var(--card-bg)] rounded-lg shadow-custom card-japanese">
+	            <div className="relative mb-6">
+	              <div className="absolute -inset-4 bg-[var(--accent-primary)]/10 rounded-full blur-md animate-pulse"></div>
+	              <div className="relative flex items-center justify-center">
+	                <div className="w-3 h-3 bg-[var(--accent-primary)]/70 rounded-full animate-pulse"></div>
+	                <div className="w-3 h-3 bg-[var(--accent-primary)]/70 rounded-full animate-pulse delay-75 mx-2"></div>
+	                <div className="w-3 h-3 bg-[var(--accent-primary)]/70 rounded-full animate-pulse delay-150"></div>
+	              </div>
+	            </div>
+	            <p className="text-[var(--foreground)] text-center mb-3 font-serif">
+	              {loadingMessage || messages.common?.loading || 'Loading...'}
+	              {isExporting && (messages.loading?.preparingDownload || ' Please wait while we prepare your download...')}
+	            </p>
+	          </div>
+	        ) : null}
       </main>
 
       <footer className="max-w-[90%] xl:max-w-[1400px] mx-auto mt-8 flex flex-col gap-4 w-full">
