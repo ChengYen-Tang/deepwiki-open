@@ -3,6 +3,7 @@
 import React, {useState, useRef, useEffect} from 'react';
 import {FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import Markdown from './Markdown';
+import { processWikiContent } from '@/utils/wikiContentProcessor';
 import { useLanguage } from '@/contexts/LanguageContext';
 import RepoInfo from '@/types/repoinfo';
 import getRepoUrl from '@/utils/getRepoUrl';
@@ -40,6 +41,8 @@ interface AskProps {
   isCustomModel?: boolean;
   customModel?: string;
   language?: string;
+  knownFilePaths?: string[];
+  defaultBranch?: string;
   onRef?: (ref: { clearConversation: () => void }) => void;
 }
 
@@ -50,10 +53,13 @@ const Ask: React.FC<AskProps> = ({
   isCustomModel = false,
   customModel = '',
   language = 'en',
+  knownFilePaths,
+  defaultBranch,
   onRef
 }) => {
   const [question, setQuestion] = useState('');
   const [response, setResponse] = useState('');
+  const [retrievedFilePaths, setRetrievedFilePaths] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [deepResearch, setDeepResearch] = useState(false);
 
@@ -338,7 +344,18 @@ const Ask: React.FC<AskProps> = ({
         requestBody,
         // Message handler
         (message: string) => {
-          fullResponse += message;
+          const chunk = String(message ?? '');
+          if (chunk.startsWith('[[RAG_SOURCES]]')) {
+            try {
+              const payload = JSON.parse(chunk.slice('[[RAG_SOURCES]]'.length));
+              const filePaths = Array.isArray(payload?.file_paths) ? payload.file_paths : [];
+              setRetrievedFilePaths(filePaths);
+            } catch {
+              // ignore malformed control message
+            }
+            return;
+          }
+          fullResponse += chunk;
           setResponse(fullResponse);
 
           // Extract research stage if this is a deep research response
@@ -580,7 +597,18 @@ const Ask: React.FC<AskProps> = ({
         requestBody,
         // Message handler
         (message: string) => {
-          fullResponse += message;
+          const chunk = String(message ?? '');
+          if (chunk.startsWith('[[RAG_SOURCES]]')) {
+            try {
+              const payload = JSON.parse(chunk.slice('[[RAG_SOURCES]]'.length));
+              const filePaths = Array.isArray(payload?.file_paths) ? payload.file_paths : [];
+              setRetrievedFilePaths(filePaths);
+            } catch {
+              // ignore malformed control message
+            }
+            return;
+          }
+          fullResponse += chunk;
           setResponse(fullResponse);
 
           // Extract research stage if this is a deep research response
@@ -738,7 +766,7 @@ const Ask: React.FC<AskProps> = ({
               ref={responseRef}
               className="p-4 max-h-[500px] overflow-y-auto"
             >
-              <Markdown content={response} />
+              <Markdown content={processWikiContent(response, repoInfo, knownFilePaths, defaultBranch || 'main', retrievedFilePaths)} />
             </div>
 
             {/* Research navigation and clear button */}

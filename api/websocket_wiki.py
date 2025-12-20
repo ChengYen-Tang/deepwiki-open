@@ -2,6 +2,7 @@ import logging
 import os
 from typing import List, Optional, Dict, Any
 from urllib.parse import unquote
+import json
 
 import google.generativeai as genai
 from adalflow.components.model_client.ollama_client import OllamaClient
@@ -181,6 +182,7 @@ async def handle_websocket_chat(websocket: WebSocket):
         # Only retrieve documents if input is not too large
         context_text = ""
         retrieved_documents = None
+        retrieved_file_paths: List[str] = []
 
         if not input_too_large:
             try:
@@ -201,6 +203,16 @@ async def handle_websocket_chat(websocket: WebSocket):
                         documents = retrieved_documents[0].documents
                         logger.info(f"Retrieved {len(documents)} documents")
 
+                        # Track which file paths were retrieved (used by frontend to disambiguate Sources links)
+                        try:
+                            retrieved_file_paths = sorted({
+                                (doc.meta_data or {}).get('file_path', 'unknown')
+                                for doc in documents
+                                if getattr(doc, 'meta_data', None) is not None
+                            })
+                        except Exception as e:
+                            logger.warning(f"Failed to collect retrieved file paths: {e}")
+
                         # Group documents by file path
                         docs_by_file = {}
                         for doc in documents:
@@ -214,8 +226,19 @@ async def handle_websocket_chat(websocket: WebSocket):
                         for file_path, docs in docs_by_file.items():
                             # Add file header with metadata
                             header = f"## File Path: {file_path}\n\n"
-                            # Add document content
-                            content = "\n\n".join([doc.text for doc in docs])
+
+                            # Add document content with line ranges when available
+                            chunk_parts = []
+                            for doc in docs:
+                                meta = getattr(doc, 'meta_data', {}) or {}
+                                start_line = meta.get('start_line')
+                                end_line = meta.get('end_line')
+                                if start_line and end_line:
+                                    chunk_parts.append(f"### Lines {start_line}-{end_line}\n{doc.text}")
+                                else:
+                                    chunk_parts.append(doc.text)
+
+                            content = "\n\n".join(chunk_parts)
 
                             context_parts.append(f"{header}{content}")
 
@@ -234,6 +257,16 @@ async def handle_websocket_chat(websocket: WebSocket):
         # Get repository information
         repo_url = request.repo_url
         repo_name = repo_url.split("/")[-1] if "/" in repo_url else repo_url
+
+        # Send RAG retrieval summary (out-of-band) so clients can use it for link resolution.
+        # This is a control message and should not be appended to user-visible text.
+        if retrieved_file_paths:
+            try:
+                await websocket.send_text(
+                    "[[RAG_SOURCES]]" + json.dumps({"file_paths": retrieved_file_paths})
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send RAG_SOURCES control message: {e}")
 
         # Determine repository type
         repo_type = request.type

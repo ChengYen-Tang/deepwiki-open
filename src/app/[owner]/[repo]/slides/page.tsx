@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { FaArrowLeft, FaSync, FaDownload, FaArrowRight, FaArrowUp, FaTimes } from 'react-icons/fa';
 import ThemeToggle from '@/components/theme-toggle';
+import { processWikiContent } from '@/utils/wikiContentProcessor';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { RepoInfo } from '@/types/repoinfo';
 import getRepoUrl from '@/utils/getRepoUrl';
@@ -82,6 +83,11 @@ export default function SlidesPage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [slides, setSlides] = useState<Slide[]>([]);
+    const knownFilePaths = useMemo(() => {
+      const pages = cachedWikiContent?.wiki_structure?.pages;
+      if (!pages) return [];
+      return pages.flatMap(p => p.filePaths || []).filter(Boolean);
+    }, [cachedWikiContent]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -448,7 +454,8 @@ This is slide ${slideCounter} of ${slideMatches.length} in the presentation.
 ${slideDescription ? `The slide should cover: ${slideDescription}` : ''}
 
 Use the following wiki content as reference:
-${wikiContent}
+${repoInfo ? processWikiContent(wikiContent, repoInfo) : wikiContent}
+  ${repoInfo ? processWikiContent(wikiContent, repoInfo, knownFilePaths, 'main') : wikiContent}
 
 I need ONLY the HTML for this slide. The slide should maintain a consistent dark theme with gradients and professional styling, but BE CREATIVE with the content and layout.
 

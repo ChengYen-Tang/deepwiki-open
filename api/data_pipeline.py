@@ -427,7 +427,14 @@ def prepare_data_pipeline(embedder_type: str = None, is_ollama_embedder: bool = 
     if embedder_type is None:
         embedder_type = get_embedder_type()
 
-    splitter = TextSplitter(**configs["text_splitter"])
+    # Prefer a line-aware splitter when configured so we can preserve stable citations.
+    splitter_config = configs["text_splitter"]
+    if splitter_config.get("split_by") in {"line", "line_with_metadata", "line_aware"}:
+        from api.tools.line_aware_splitter import LineAwareTextSplitter
+
+        splitter = LineAwareTextSplitter(**splitter_config)
+    else:
+        splitter = TextSplitter(**splitter_config)
     embedder_config = get_embedder_config()
 
     embedder = get_embedder(embedder_type=embedder_type)
@@ -929,8 +936,20 @@ class DatabaseManager:
                 self.db = LocalDB.load_state(self.repo_paths["save_db_file"])
                 documents = self.db.get_transformed_data(key="split_and_embed")
                 if documents:
-                    logger.info(f"Loaded {len(documents)} documents from existing database")
-                    return documents
+                    # If the existing DB was built before we added line-aware metadata,
+                    # rebuild to ensure stable and accurate citations.
+                    sample = next((d for d in documents if getattr(d, 'meta_data', None)), None)
+                    meta = getattr(sample, 'meta_data', {}) if sample is not None else {}
+                    has_lines = isinstance(meta, dict) and (
+                        'start_line' in meta and 'end_line' in meta and meta.get('splitter_version') is not None
+                    )
+                    if has_lines:
+                        logger.info(f"Loaded {len(documents)} documents from existing database")
+                        return documents
+
+                    logger.info(
+                        "Existing database is missing line-aware splitter metadata; rebuilding embeddings DB..."
+                    )
             except Exception as e:
                 logger.error(f"Error loading existing database: {e}")
                 # Continue to create a new database

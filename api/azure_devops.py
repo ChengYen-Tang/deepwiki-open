@@ -329,7 +329,12 @@ class AzureDevOpsClient:
             response = self._make_request(url, params=params)
             logger.debug(f"Response status: {response.status_code}")
             logger.debug(f"Response headers: {response.headers}")
-            logger.debug(f"Response body (first 500 chars): {response.text[:500]}")
+            response_text = getattr(response, "text", "")
+            try:
+                response_text_str = response_text if isinstance(response_text, str) else str(response_text)
+            except Exception:
+                response_text_str = ""
+            logger.debug(f"Response body (first 500 chars): {response_text_str[:500]}")
         except Exception as e:
             logger.error(f"Error making request to {url}: {e}")
             raise
@@ -339,8 +344,14 @@ class AzureDevOpsClient:
         elif response.status_code == 403:
             raise ValueError("Forbidden: Your PAT doesn't have permission to access this repository. Ensure it has 'Code (Read)' scope.")
         elif response.status_code == 404:
-            detail = response.text
-            raise ValueError(f"Repository not found: {self.repo_info.repository}. API URL: {url}. Response: {detail[:200]}")
+            detail = getattr(response, "text", "")
+            try:
+                detail_str = detail if isinstance(detail, str) else str(detail)
+            except Exception:
+                detail_str = ""
+            raise ValueError(
+                f"Repository not found: {self.repo_info.repository}. API URL: {url}. Response: {detail_str[:200]}"
+            )
         
         response.raise_for_status()
         return response.json()

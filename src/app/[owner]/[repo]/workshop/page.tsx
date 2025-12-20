@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { FaArrowLeft, FaSync, FaDownload } from 'react-icons/fa';
 import ThemeToggle from '@/components/theme-toggle';
 import Markdown from '@/components/Markdown';
+import { processWikiContent } from '@/utils/wikiContentProcessor';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { RepoInfo } from '@/types/repoinfo';
 import getRepoUrl from '@/utils/getRepoUrl';
@@ -78,6 +79,12 @@ export default function WorkshopPage() {
   const [workshopContent, setWorkshopContent] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  const knownFilePaths = useMemo(() => {
+    const pages = cachedWikiContent?.wiki_structure?.pages;
+    if (!pages) return [];
+    return pages.flatMap(p => p.filePaths || []).filter(Boolean);
+  }, [cachedWikiContent]);
   // Define a type for the wiki content
   interface WikiPage {
     id: string;
@@ -624,7 +631,7 @@ Estimated time: 20-30 minutes | Combines concepts from all exercises
                 <p className="text-red-700 dark:text-red-300 text-sm">{exportError}</p>
               </div>
             )}
-            <Markdown content={workshopContent} />
+            <Markdown content={processWikiContent(workshopContent, repoInfo, knownFilePaths, 'main')} />
           </div>
         )}
       </main>

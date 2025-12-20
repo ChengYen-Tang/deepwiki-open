@@ -10,6 +10,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { RepoInfo } from '@/types/repoinfo';
 import getRepoUrl from '@/utils/getRepoUrl';
 import { extractUrlDomain, extractUrlPath } from '@/utils/urlDecoder';
+import { processWikiContent } from '@/utils/wikiContentProcessor';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -285,6 +286,12 @@ export default function RepoWikiPage() {
   // Default branch state
   const [defaultBranch, setDefaultBranch] = useState<string>('main');
 
+  // Repo file paths (used to resolve/validate Sources links)
+  const [repoFilePaths, setRepoFilePaths] = useState<string[]>([]);
+
+  // Per-page RAG retrieved file paths (used to disambiguate non-unique filenames in Sources)
+  const [pageRetrievedFilePaths, setPageRetrievedFilePaths] = useState<Record<string, string[]>>({});
+
   // Helper function to generate proper repository file URLs
   const generateFileUrl = useCallback((filePath: string): string => {
     if (effectiveRepoInfo.type === 'local') {
@@ -504,6 +511,7 @@ Based ONLY on the content of the \`[RELEVANT_SOURCE_FILES]\`:
     *   For EVERY piece of significant information, explanation, diagram, table entry, or code snippet, you MUST cite the specific source file(s) and relevant line numbers from which the information was derived.
     *   Place citations at the end of the paragraph, under the diagram/table, or after the code snippet.
     *   Use the exact format: \`Sources: [filename.ext:start_line-end_line]()\` for a range, or \`Sources: [filename.ext:line_number]()\` for a single line. Multiple files can be cited: \`Sources: [file1.ext:1-10](), [file2.ext:5](), [dir/file3.ext]()\` (if the whole file is relevant and line numbers are not applicable or too broad).
+    *   CRITICAL: The path inside \`[]\` MUST be the full repo-relative path (include directories). Never shorten to just a filename.
     *   If an entire section is overwhelmingly based on one or two files, you can cite them under the section heading in addition to more specific citations within the section.
     *   IMPORTANT: You MUST cite AT LEAST 5 different source files throughout the wiki page to ensure comprehensive coverage.
 
@@ -591,7 +599,18 @@ Remember:
           await new Promise<void>((resolve, reject) => {
             // Handle incoming messages
             ws.onmessage = (event) => {
-              content += event.data;
+              const chunk = String(event.data ?? '');
+              if (chunk.startsWith('[[RAG_SOURCES]]')) {
+                try {
+                  const payload = JSON.parse(chunk.slice('[[RAG_SOURCES]]'.length));
+                  const filePaths = Array.isArray(payload?.file_paths) ? payload.file_paths : [];
+                  setPageRetrievedFilePaths(prev => ({ ...prev, [page.id]: filePaths }));
+                } catch {
+                  // ignore malformed control message
+                }
+                return;
+              }
+              content += chunk;
             };
 
             // Handle WebSocket close
@@ -1525,6 +1544,16 @@ IMPORTANT:
         }
       }
 
+      // Keep a local index of real file paths for resolving Sources links
+      if (fileTreeData) {
+        setRepoFilePaths(
+          fileTreeData
+            .split('\n')
+            .map(p => p.trim())
+            .filter(Boolean)
+        );
+      }
+
       // Now determine the wiki structure
       await determineWikiStructure(fileTreeData, readmeContent, owner, repo);
 
@@ -2214,7 +2243,13 @@ IMPORTANT:
 
                   <div className="prose prose-sm md:prose-base lg:prose-lg max-w-none">
                     <Markdown
-                      content={generatedPages[currentPageId].content}
+                      content={processWikiContent(
+                        generatedPages[currentPageId].content,
+                        effectiveRepoInfo,
+                        repoFilePaths,
+                        defaultBranch,
+                        pageRetrievedFilePaths[currentPageId]
+                      )}
                     />
                   </div>
 
@@ -2316,6 +2351,8 @@ IMPORTANT:
               isCustomModel={isCustomSelectedModelState}
               customModel={customSelectedModelState}
               language={language}
+              knownFilePaths={repoFilePaths}
+              defaultBranch={defaultBranch}
               onRef={(ref) => (askComponentRef.current = ref)}
             />
           </div>
