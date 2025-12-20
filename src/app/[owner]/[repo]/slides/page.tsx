@@ -83,11 +83,6 @@ export default function SlidesPage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [slides, setSlides] = useState<Slide[]>([]);
-    const knownFilePaths = useMemo(() => {
-      const pages = cachedWikiContent?.wiki_structure?.pages;
-      if (!pages) return [];
-      return pages.flatMap(p => p.filePaths || []).filter(Boolean);
-    }, [cachedWikiContent]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -123,6 +118,12 @@ export default function SlidesPage() {
   }
 
   const [cachedWikiContent, setCachedWikiContent] = useState<WikiCacheData | null>(null);
+
+  const knownFilePaths = useMemo(() => {
+    const pages = cachedWikiContent?.wiki_structure?.pages;
+    if (!pages) return [];
+    return pages.flatMap(p => p.filePaths || []).filter(Boolean);
+  }, [cachedWikiContent]);
 
   // Function to fetch cached wiki content
   const fetchCachedWikiContent = useCallback(async () => {

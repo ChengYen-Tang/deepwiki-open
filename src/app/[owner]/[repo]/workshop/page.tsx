@@ -80,11 +80,6 @@ export default function WorkshopPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
-  const knownFilePaths = useMemo(() => {
-    const pages = cachedWikiContent?.wiki_structure?.pages;
-    if (!pages) return [];
-    return pages.flatMap(p => p.filePaths || []).filter(Boolean);
-  }, [cachedWikiContent]);
   // Define a type for the wiki content
   interface WikiPage {
     id: string;
@@ -115,6 +110,12 @@ export default function WorkshopPage() {
   }
 
   const [cachedWikiContent, setCachedWikiContent] = useState<WikiCacheData | null>(null);
+
+  const knownFilePaths = useMemo(() => {
+    const pages = cachedWikiContent?.wiki_structure?.pages;
+    if (!pages) return [];
+    return pages.flatMap(p => p.filePaths || []).filter(Boolean);
+  }, [cachedWikiContent]);
 
   // Function to fetch cached wiki content
   const fetchCachedWikiContent = useCallback(async () => {
