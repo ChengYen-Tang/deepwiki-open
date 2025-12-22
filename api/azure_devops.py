@@ -3,6 +3,7 @@ Azure DevOps integration module for DeepWiki.
 Handles URL parsing, API calls, and git operations for Azure DevOps Services and Server.
 """
 
+import os
 import re
 import base64
 import logging
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Default API version for Azure DevOps REST API
 DEFAULT_API_VERSION = "7.1"
+SSL_VERIFY_ENV = "DEEPWIKI_AZURE_DEVOPS_SSL_VERIFY"
 
 
 @dataclass
@@ -300,6 +302,9 @@ class AzureDevOpsClient:
         """
         headers = kwargs.pop('headers', {})
         headers.update(self._get_headers())
+
+        if 'verify' not in kwargs:
+            kwargs['verify'] = self._get_ssl_verify()
         
         try:
             response = requests.request(method, url, headers=headers, **kwargs)
@@ -310,6 +315,26 @@ class AzureDevOpsClient:
             if self.pat:
                 error_msg = mask_pat_in_string(error_msg, self.pat)
             raise requests.RequestException(error_msg)
+
+    def _get_ssl_verify(self) -> bool | str:
+        """
+        Determine SSL verification behavior for Azure DevOps requests.
+
+        Uses DEEPWIKI_AZURE_DEVOPS_SSL_VERIFY:
+        - unset/empty => True
+        - "false"/"0"/"no" => False
+        - any other value => treated as a CA bundle path
+        """
+        value = os.environ.get(SSL_VERIFY_ENV)
+        if value is None or value == "":
+            return True
+
+        normalized = value.strip().lower()
+        if normalized in {"false", "0", "no", "off"}:
+            logger.warning("Azure DevOps SSL verification is disabled via %s.", SSL_VERIFY_ENV)
+            return False
+
+        return value
     
     def get_repository_info(self) -> Dict[str, Any]:
         """
