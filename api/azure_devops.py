@@ -23,7 +23,7 @@ SSL_VERIFY_ENV = "DEEPWIKI_AZURE_DEVOPS_SSL_VERIFY"
 class AzureRepoInfo:
     """Data class to hold parsed Azure DevOps repository information."""
     host: str
-    organization: str  # org for Services, collection for Server
+    organization: str  # org for Services, collection path for Server (may include virtual dirs)
     project: str
     repository: str
     api_base: str
@@ -112,11 +112,16 @@ def parse_azure_repo_url(repo_url: str) -> Optional[AzureRepoInfo]:
             # Old Services format: https://{org}.visualstudio.com/{project}/_git/{repo}
             organization = host.split('.')[0]
         else:
-            # Server/TFS format: https://{host}/{collection}/{project}/_git/{repo}
+            # Server/TFS format: https://{host}/[virtualdir]/.../{collection}/{project}/_git/{repo}
             if git_index < 2:
                 logger.warning(f"Missing collection in Azure DevOps URL: {repo_url}")
                 return None
-            organization = path_parts[0]
+            collection = path_parts[git_index - 2]
+            virtual_dir_parts = path_parts[:git_index - 2]
+            if virtual_dir_parts:
+                organization = "/".join(virtual_dir_parts + [collection])
+            else:
+                organization = collection
         
         # Build API base URL
         scheme = parsed.scheme or 'https'
@@ -125,9 +130,9 @@ def parse_azure_repo_url(repo_url: str) -> Optional[AzureRepoInfo]:
         elif 'visualstudio.com' in host:
             api_base = f"{scheme}://{host}/{project}"
         else:
-            # Server/TFS: Keep the full path including collection
-            # For: https://host/collection/project/_git/repo
-            # API should be: https://host/collection/project
+            # Server/TFS: Keep the full path including virtual dirs + collection
+            # For: https://host/[virtualdir]/collection/project/_git/repo
+            # API should be: https://host/[virtualdir]/collection/project
             api_base = f"{scheme}://{host}/{organization}/{project}"
         
         # Clone URL is the same as repo URL (without .git)
@@ -264,7 +269,10 @@ class AzureDevOpsClient:
         """
         self.repo_info = parse_azure_repo_url(repo_url)
         if not self.repo_info:
-            raise ValueError(f"Invalid Azure DevOps URL: {repo_url}. Expected format: https://{{host}}/{{collection}}/{{project}}/_git/{{repo}}")
+            raise ValueError(
+                "Invalid Azure DevOps URL: "
+                f"{repo_url}. Expected format: https://{{host}}/[virtualdir]/{{collection}}/{{project}}/_git/{{repo}}"
+            )
         
         self.pat = pat
         self.api_version = api_version
